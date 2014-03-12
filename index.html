@@ -1,0 +1,197 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ZA Cartogram</title>
+    <meta charset="utf-8">
+<!--    <script src="js/d3.v2.min.js"></script> -->
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+
+    <script src="js/topojson.js"></script>
+    <script src="js/cartogram.js"></script>
+    <link href='http://fonts.googleapis.com/css?family=Open+Sans:300' rel='stylesheet' type='text/css'>
+    <style type="text/css">
+        body {
+            font-family:'Open Sans', sans-serif;
+            font-weight: 300;
+            font-size: 14px;
+            line-height: 1.4em;
+            padding-top: 20px;
+            margin: 0 auto;
+            width: 600px;
+        }
+        #map-container {
+            height: 500px;
+            
+            position: relative;
+            margin: 10px 0;
+        }
+
+        #map {
+            overflow: visible;
+        }
+        #click_to_run {
+            color:#888;
+            width: 600px;
+            font-size: 2em;
+            text-align: center;
+            cursor: pointer;
+            padding-top: 30px;
+        }
+        path.munic {
+            stroke: #AAA;
+            stroke-width: .5;
+        }
+        path.munic:hover {
+            stroke: #000;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="click_to_run" onclick="do_update()">
+        ...
+    </div>
+    <div id="map-container">
+        <svg id="map"></svg>
+    </div>
+
+    <script>
+        //the colour scheme for the different winning parties.
+        var colour_map = {
+            "ANC": "#FFCC00",
+            "DA": "#005CA7",
+            "IFP": "#FF1800"
+        };
+
+
+        var map = d3.select("#map");
+
+        var munics = map.append("g")
+            .attr("id", "munics")
+            .selectAll("path");
+
+        var width = 500;
+        var height = 400;
+
+
+        var proj = d3.geo.mercator();
+        var path = d3.geo.path()
+            .projection(proj);
+/*            .origin([24.7, -29.2])
+            .parallels([70, -15])
+            .scale(2000)
+            .translate([300, 300]);*/
+
+        var s = 35.4;
+        var w = -11;
+        var n = 72;
+        var e = 34.5;
+        var sw = [w, s];
+        var ne = [e, n];
+        var bb = { type: "Feature", properties: {}, geometry: { coordinates: [sw,ne], type: "MultiPoint" }};
+
+        // Or let them be defined my the boundries of the geojson (uncomment this lien) 
+        // var bb = countries;
+
+        proj
+          .scale(1)
+          .translate([0, 0]);
+
+        // Get boudning box
+        var b = path.bounds(bb),
+          s = .95 / Math.max((b[1][0] - b[0][0]) / width, (b[1][1] - b[0][1]) / height),
+          t = [(width - s * (b[1][0] + b[0][0])) / 2, (height - s * (b[1][1] + b[0][1])) / 2];
+
+        proj
+          .scale(s)
+          .translate(t);
+
+        var topology,
+            geometries,
+            carto_features;
+
+        var vote_data = d3.map();
+
+        var carto = d3.cartogram()
+            .projection(proj)
+            .properties(function (d) {
+                // this add the "properties" properties to the geometries
+                return d.properties;
+            });
+
+         // the data came from some rolling up of info I got from iec.org.za site. 
+         // It lists the winning party, number or registered voters and votes 
+         // cast per local municipality.
+        /*d3.csv("data/voting_data.csv", function (data) {
+            data.forEach(function (d) {
+                vote_data.set(d.MUNIC, [d.PARTY, d.VOTERS, d.VOTES]);
+            })
+        });*/
+
+         // this loads test the topojson file and creates the map.
+        d3.json("data/topo-eu.geojson", function (data) {
+            topology = data;
+            geometries = topology.objects.eu.geometries;
+
+            //these 2 below create the map and are based on the topojson implementation
+            var features = carto.features(topology, geometries),
+                path = d3.geo.path()
+                    .projection(proj);
+
+            munics = munics.data(features)
+                .enter()
+                .append("path")
+                .attr("class", "munic")
+                .attr("id", function (d) {
+                    return d.properties.NAME;
+                })
+                .attr("fill", function (e) {
+                    return "#ccc";
+//                    return colour_map[vote_data.get(e.properties.CAT_B)[0]];
+                })
+                .attr("d", path);
+
+            munics.append("title")
+                .text(function (d) {
+                    return d.properties.NAME;
+                });
+
+            d3.select("#click_to_run").text("click here to run");
+        });
+
+        function do_update() {
+            d3.select("#click_to_run").text("thinking...");
+            setTimeout(function () {
+
+                // this sets the value to use for scaling, per munic. Here I used the total number 
+                // of voters per munic. the scaling is relative to the max value.
+                carto.value(function (d) {
+                    return d.properties["POP2005"];
+                });
+
+
+                if (carto_features == undefined)
+                    //this regenrates the topology features for the new map based on 
+                    carto_features = carto(topology, geometries).features;
+
+                //update the map data
+                munics.data(carto_features)
+                    .select("title")
+                    .text(function (d) {
+                        return d.properties.NAME;
+                    });
+
+                munics.transition()
+                    .duration(750)
+                    .each("end", function () {
+                        d3.select("#click_to_run").text("done")
+                    })
+                    .attr("d", carto.path);
+            }, 1);
+        }
+    </script>
+</body>
+
+</html>
